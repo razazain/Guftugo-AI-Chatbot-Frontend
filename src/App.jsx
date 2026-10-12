@@ -75,6 +75,7 @@ function App() {
   const [authName, setAuthName] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
   const [busyDocuments, setBusyDocuments] = useState(false);
   const [usage, setUsage] = useState(emptyUsage);
   const [usageBusy, setUsageBusy] = useState(false);
@@ -178,8 +179,12 @@ function App() {
     catch (error) { notify(friendlyError(error)); }
   };
 
-  const openAuth = (mode = "login") => {
-    setAuthMode(mode); setAuthError(""); setModal("auth"); setShowProfile(false);
+  const openAuth = (mode = "login", notice = "") => {
+    setAuthMode(mode);
+    setAuthError("");
+    setAuthNotice(notice);
+    setModal("auth");
+    setShowProfile(false);
   };
 
   const handleAuth = async (event) => {
@@ -316,7 +321,13 @@ function App() {
   const sendMessage = async (value = input) => {
     const text = value.trim();
     if ((!text && attachedDocs.length === 0) || generating) return;
-    if (!user) { notify("Sign in to start chatting and save your conversations."); openAuth("login"); return; }
+    if (!user) {
+      openAuth(
+        "login",
+        "You're one step away! Sign in or create a free account to send your message and start chatting with Guftugo.",
+      );
+      return;
+    }
     const prompt = text || "Please explain the attached document(s) and summarize the key points.";
     const attachmentSnapshot = [...attachedDocs];
     const userLocalId = `local-user-${Date.now()}`;
@@ -491,7 +502,7 @@ function App() {
                   <button className="tool-btn disabled-feature" onClick={showWebSearchComingSoon} title="Coming soon" aria-label="Web search coming soon" aria-disabled="true"><Globe2 size={15} /><span>Web search</span><span className="toggle"><i /></span></button>
                   <div className="language-select"><Globe2 size={14} /><select value={language} onChange={(event) => changeLanguage(event.target.value)} aria-label="Response language"><option>Auto-detect</option><option>English</option><option>Roman Urdu</option></select><ChevronDown size={12} /></div>
                 </div>
-                <button className="send-btn" disabled={(!input.trim() && attachedDocs.length === 0) || generating || !user} onClick={() => sendMessage()} aria-label="Send message" title={!user ? "Sign in to chat" : "Send message"}>{generating ? <LoaderCircle className="spin" size={18} /> : <ArrowUp size={19} />}</button>
+                <button className="send-btn" disabled={(!input.trim() && attachedDocs.length === 0) || generating} onClick={() => sendMessage()} aria-label="Send message" title={!user ? "Sign in to chat" : "Send message"}>{generating ? <LoaderCircle className="spin" size={18} /> : <ArrowUp size={19} />}</button>
               </div>
             </div>
             <div className="composer-disclaimer">Guftugo can make mistakes. Check important information.</div>
@@ -504,6 +515,7 @@ function App() {
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
           <div className="modal-head"><div><span className="modal-kicker">GUFTUGO</span><h2 id="modal-title">{modal === "auth" ? (authMode === "login" ? "Welcome back" : "Create your account") : modal === "settings" ? "Settings" : modal === "documents" ? "My documents" : modal === "usage" ? "Usage" : "Help center"}</h2></div><button className="icon-button" onClick={() => setModal("")} title="Close" aria-label="Close"><X size={18} /></button></div>
           {modal === "auth" && <form className="modal-body auth-form" onSubmit={handleAuth}>
+            {authNotice && <div className="auth-notice" role="status">{authNotice}</div>}
             {authError && <div className="form-error" role="alert">{authError}</div>}
             {authMode === "register" && <label>Full name<input value={authName} onChange={(event) => setAuthName(event.target.value)} placeholder="Your name" minLength={2} maxLength={80} required /></label>}
             <label>Email address<input type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="you@example.com" maxLength={254} autoComplete="email" required /></label>
