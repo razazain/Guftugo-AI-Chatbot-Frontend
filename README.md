@@ -64,3 +64,16 @@ The brand image is at `public/assets/guftugo-logo.png`. Replace that file with y
 ## Session handling
 
 Access and refresh tokens are stored in browser local storage. A failed authenticated request can attempt refresh-token rotation using the backend's `/auth/refresh` endpoint. For a production deployment, serve the site over HTTPS and review your preferred client-side token-storage policy.
+
+
+## Public legal pages and Google OAuth branding
+
+The frontend includes static, public HTML pages at `public/privacy-policy/index.html` and `public/terms-of-service/index.html`, styled with `public/legal.css` and the existing Guftugo logo. Legal links are available in the main footer and auth modal. The `public/_redirects` file maps `/privacy-policy` and `/terms-of-service` to those pages on Netlify.
+
+Build and deploy from the frontend source (`npm install`, then `npm run build`; Netlify is configured by `netlify.toml`). After deploying the frontend, use your actual public Netlify/custom domain in Google Auth Platform Branding:
+
+- Application home page: `https://YOUR-ACTUAL-DOMAIN/`
+- Privacy policy: `https://YOUR-ACTUAL-DOMAIN/privacy-policy`
+- Terms of service: `https://YOUR-ACTUAL-DOMAIN/terms-of-service`
+
+Replace `YOUR-ACTUAL-DOMAIN` with the exact published frontend hostname. These are general service terms and privacy disclosures based on the backend schema and features in this project; review them against your final operating practices and applicable law before submitting Google verification.
