@@ -5,6 +5,8 @@ import {
   Plus, Search, Settings2, Sun, Trash2, Upload, UserRound, X, Pencil, Paperclip,
   LoaderCircle, BookOpen, Code2, Lightbulb, FileUp, ExternalLink, Eye, EyeOff,
 } from "lucide-react";
+import { signInWithPopup, signInWithRedirect, signOut as firebaseSignOut } from "firebase/auth";
+import { firebaseAuth, firebaseConfigured, getGoogleRedirectResult, googleProvider } from "./firebase.js";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { apiRequest, apiStream, clearStoredTokens, getStoredTokens, storeTokens } from "./api.js";
@@ -37,6 +39,9 @@ function friendlyError(error) {
   if (/email already exists|already registered/i.test(message)) return "An account with this email already exists. Sign in instead.";
   if (/incorrect|invalid credentials/i.test(message)) return "Email or password is incorrect.";
   if (/expired|sign in again|session/i.test(message)) return "Your session has expired. Please sign in again.";
+  if (/auth\/popup-closed-by-user|cancelled-popup-request/i.test(error?.code || "")) return "Google sign-in was cancelled. You can try again whenever you're ready.";
+  if (/auth\/unauthorized-domain/i.test(error?.code || "")) return "This website is not authorized for Google sign-in yet. Add your deployed domain in Firebase Authentication settings.";
+  if (/auth\/popup-blocked|auth\/operation-not-supported-in-this-environment/i.test(error?.code || "")) return "Your browser blocked the Google sign-in window. Please allow pop-ups or try again.";
   return message;
 }
 function formatNumber(value) { return new Intl.NumberFormat().format(Number(value || 0)); }
@@ -187,6 +192,16 @@ function App() {
     setShowProfile(false);
   };
 
+  const completeSignIn = async (data, successMessage) => {
+    if (!data.accessToken || !data.refreshToken || !data.user) throw new Error("The server returned an incomplete sign-in response.");
+    storeTokens(data); setUser(data.user); setProfileName(data.user.name || "");
+    setLanguage(LANGUAGE_FROM_API[data.user.preferredLanguage] || language);
+    setModal(""); setAuthPassword(""); setShowAuthPassword(false); setAuthError("");
+    const docs = await loadWorkspace().catch((error) => { notify(`Signed in, but account data could not be loaded: ${friendlyError(error)}`); return []; });
+    notify(successMessage);
+    if (activeId) await loadMessages(activeId, docs).catch((error) => notify(friendlyError(error)));
+  };
+
   const handleAuth = async (event) => {
     event.preventDefault(); setAuthBusy(true); setAuthError("");
     try {
@@ -194,22 +209,81 @@ function App() {
         ? { name: authName.trim(), email: authEmail.trim(), password: authPassword, preferredLanguage: LANGUAGE_TO_API[language] || "auto" }
         : { email: authEmail.trim(), password: authPassword };
       const response = await apiRequest(`/auth/${authMode === "register" ? "register" : "login"}`, { method: "POST", body: payload, auth: false });
-      const data = response?.data || {};
-      if (!data.accessToken || !data.refreshToken || !data.user) throw new Error("The server returned an incomplete sign-in response.");
-      storeTokens(data); setUser(data.user); setProfileName(data.user.name || "");
-      setLanguage(LANGUAGE_FROM_API[data.user.preferredLanguage] || language);
-      setModal(""); setAuthPassword(""); setShowAuthPassword(false); setAuthError("");
-      const docs = await loadWorkspace().catch((error) => { notify(`Signed in, but account data could not be loaded: ${friendlyError(error)}`); return []; });
-      notify(authMode === "register" ? "Your account has been created." : "Welcome back.");
-      if (activeId) await loadMessages(activeId, docs).catch((error) => notify(friendlyError(error)));
+      await completeSignIn(response?.data || {}, authMode === "register" ? "Your account has been created." : "Welcome back.");
     } catch (error) { setAuthError(friendlyError(error)); }
     finally { setAuthBusy(false); }
   };
+
+  const handleGoogleSignIn = async () => {
+    setAuthError("");
+    if (!firebaseConfigured || !firebaseAuth) {
+      setAuthError("Google sign-in is not configured yet. You can use email and password for now.");
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      let credential;
+      // Prefer redirect on narrow/mobile screens; popup windows are often blocked there.
+      if (window.matchMedia("(max-width: 640px)").matches) {
+        await signInWithRedirect(firebaseAuth, googleProvider);
+        return;
+      }
+      try {
+        credential = await signInWithPopup(firebaseAuth, googleProvider);
+      } catch (error) {
+        if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment"].includes(error?.code)) {
+          await signInWithRedirect(firebaseAuth, googleProvider);
+          return;
+        }
+        throw error;
+      }
+      const idToken = await credential.user.getIdToken();
+      const response = await apiRequest("/auth/google", {
+        method: "POST",
+        body: { idToken, preferredLanguage: LANGUAGE_TO_API[language] || "auto" },
+        auth: false,
+      });
+      const firstName = credential.user.displayName?.trim().split(/\s+/)[0];
+      await completeSignIn(response?.data || {}, firstName ? `Welcome to Guftugo, ${firstName}!` : "Welcome to Guftugo!");
+    } catch (error) {
+      setAuthError(friendlyError(error));
+      if (firebaseAuth) await firebaseSignOut(firebaseAuth).catch(() => {});
+    } finally { setAuthBusy(false); }
+  };
+
+  useEffect(() => {
+    if (!firebaseConfigured || !firebaseAuth) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const credential = await getGoogleRedirectResult();
+        if (!credential || cancelled) return;
+        setModal("auth"); setAuthMode("login"); setAuthBusy(true); setAuthError("");
+        const idToken = await credential.user.getIdToken();
+        const response = await apiRequest("/auth/google", {
+          method: "POST",
+          body: { idToken, preferredLanguage: LANGUAGE_TO_API[language] || "auto" },
+          auth: false,
+        });
+        if (!cancelled) {
+          const firstName = credential.user.displayName?.trim().split(/\s+/)[0];
+          await completeSignIn(response?.data || {}, firstName ? `Welcome to Guftugo, ${firstName}!` : "Welcome to Guftugo!");
+        }
+      } catch (error) {
+        if (!cancelled) { setModal("auth"); setAuthMode("login"); setAuthError(friendlyError(error)); }
+        if (firebaseAuth) await firebaseSignOut(firebaseAuth).catch(() => {});
+      } finally { if (!cancelled) setAuthBusy(false); }
+    })();
+    return () => { cancelled = true; };
+  // This is intentionally a one-time redirect-result handler after Firebase returns to the app.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const signOut = async () => {
     const { refreshToken } = getStoredTokens();
     try { if (refreshToken) await apiRequest("/auth/logout", { method: "POST", body: { refreshToken } }); }
     catch { /* Tokens are cleared locally even if the server session has expired. */ }
+    if (firebaseAuth) await firebaseSignOut(firebaseAuth).catch(() => {});
     clearStoredTokens(); setUser(null); setChats([]); setMessages([]); setActiveId(null); setDocuments([]); setAttachedDocs([]); setShowProfile(false); setModal("");
     notify("You have signed out.");
   };
@@ -517,6 +591,11 @@ function App() {
           {modal === "auth" && <form className="modal-body auth-form" onSubmit={handleAuth}>
             {authNotice && <div className="auth-notice" role="status">{authNotice}</div>}
             {authError && <div className="form-error" role="alert">{authError}</div>}
+            <button className="google-auth-btn" type="button" onClick={handleGoogleSignIn} disabled={authBusy}>
+              {authBusy ? <LoaderCircle size={17} className="spin" /> : <svg className="google-auth-icon" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.74 7.18l7.28 5.64c4.25-3.92 6.7-9.71 6.7-17.29z"/><path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.52 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-6.16l-7.28-5.64c-2.02 1.35-4.6 2.15-8.62 2.15-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>}
+              <span>Continue with Google</span>
+            </button>
+            <div className="auth-divider"><span>or continue with email</span></div>
             {authMode === "register" && <label>Full name<input value={authName} onChange={(event) => setAuthName(event.target.value)} placeholder="Your name" minLength={2} maxLength={80} required /></label>}
             <label>Email address<input type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="you@example.com" maxLength={254} autoComplete="email" required /></label>
             <label>Password<div className="password-input-wrap"><input type={showAuthPassword ? "text" : "password"} value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} placeholder="At least 8 characters" minLength={authMode === "register" ? 8 : 1} maxLength={128} autoComplete={authMode === "register" ? "new-password" : "current-password"} required /><button className="password-visibility-btn" type="button" onClick={() => setShowAuthPassword((visible) => !visible)} aria-label={showAuthPassword ? "Hide password" : "Show password"} aria-pressed={showAuthPassword} title={showAuthPassword ? "Hide password" : "Show password"}>{showAuthPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></div></label>

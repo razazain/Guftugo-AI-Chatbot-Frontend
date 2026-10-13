@@ -45,13 +45,17 @@ npm run preview
 The frontend uses the attached Postman collection as the endpoint reference and calls the backend using `VITE_API_BASE_URL`.
 
 - **Health:** `GET /health` (available for API checks)
-- **Authentication:** `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me`, `PATCH /auth/me`, `PATCH /auth/me/language`, `POST /auth/logout`
+- **Authentication:** `POST /auth/register`, `POST /auth/login`, `POST /auth/google` (Firebase Google sign-in), `POST /auth/refresh`, `GET /auth/me`, `PATCH /auth/me`, `PATCH /auth/me/language`, `POST /auth/logout`
 - **Chat:** `POST /chat/stream` using Server-Sent Events; text, language, and selected document IDs are sent to the backend
 - **Conversations:** `GET /conversations`, `GET /conversations/:id/messages`, `PATCH /conversations/:id`, `DELETE /conversations/:id`
 - **Documents:** `POST /documents` (one file per request), `GET /documents`, `DELETE /documents/:id`
 - **Usage:** `GET /usage/summary?days=7`
 
 The frontend supports `.txt`, `.md`, `.csv`, and `.json` uploads up to 5 MB each, matching the backend's document service. The web-search control is intentionally unavailable and shows “Coming soon”. Provider names and fallback configuration are not shown in the user interface.
+
+## Google sign-in (Firebase)
+
+The auth modal offers **Continue with Google** in both sign-in and account creation flows. Configure the Firebase Web App values in environment variables and add the deployed domain to Firebase Authentication authorized domains. See [`FIREBASE_GOOGLE_SIGNIN_SETUP.md`](./FIREBASE_GOOGLE_SIGNIN_SETUP.md) for the full setup.
 
 ## Logo
 

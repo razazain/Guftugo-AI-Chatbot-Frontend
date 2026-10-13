@@ -1195,6 +1195,29 @@ select:focus-visible {
   flex-direction: column;
   gap: 15px;
 }
+
+.google-auth-btn {
+  width: 100%;
+  min-height: 43px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+.google-auth-btn:hover:not(:disabled) { background: var(--panel2); border-color: var(--muted2); }
+.google-auth-btn:active:not(:disabled) { transform: translateY(1px); }
+.google-auth-btn:disabled { opacity: .65; cursor: wait; }
+.google-auth-icon { width: 18px; height: 18px; flex: 0 0 auto; }
+.auth-divider { display: flex; align-items: center; gap: 12px; color: var(--muted2); font-size: 10px; margin: -1px 0; }
+.auth-divider::before, .auth-divider::after { content: ""; height: 1px; flex: 1; background: var(--border); }
 .auth-form label {
   display: flex;
   flex-direction: column;
